@@ -1,0 +1,199 @@
+---
+title: "Covid-19 SIR Modeling Malaysia"
+author: "Chan Weng Howe"
+date: "4/07/2020"
+output: html_document
+---
+
+## Data collection
+
+```{r message=FALSE}
+library(tidyverse)
+library(deSolve)
+library(lubridate)
+library(ggpubr)
+library(plotly)
+
+# data repository from John Hopkins University
+global_confirmed_jhu_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
+global_death_jhu_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"
+global_recovered_jhu_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv"
+
+# extract data of confirmed cases, death, and recovery for Malaysia.
+# extract confirmed cases in Malaysia
+mys_confirmed <- read_csv(global_confirmed_jhu_url) %>% rename(province = "Province/State", country_region = "Country/Region") %>% pivot_longer(-c(province, country_region, Lat, Long), names_to = "Date", values_to = "cumulative_cases") %>%                 mutate(Date=as.Date(strptime(Date, "%m/%d/%y"))) %>% filter(country_region=="Malaysia") %>% mutate(incident_cases = c(0, diff(cumulative_cases)))
+
+# extract recovered cases in Malaysia
+mys_recovered <- read_csv(global_recovered_jhu_url) %>% rename(province = "Province/State", country_region = "Country/Region") %>% pivot_longer(-c(province, country_region, Lat, Long), names_to = "Date", values_to = "cumulative_recovered") %>%                 mutate(Date=as.Date(strptime(Date, "%m/%d/%y"))) %>% filter(country_region=="Malaysia") %>% mutate(recovered_cases = c(0, diff(cumulative_recovered)))
+
+# extract death cases in Malaysia
+mys_death <- read_csv(global_death_jhu_url) %>% rename(province = "Province/State", country_region = "Country/Region") %>% pivot_longer(-c(province, country_region, Lat, Long), names_to = "Date", values_to = "cumulative_death") %>%                 mutate(Date=as.Date(strptime(Date, "%m/%d/%y"))) %>% filter(country_region=="Malaysia") %>% mutate(death_cases = c(0, diff(cumulative_death)))
+
+# export all data into csv correspond to the date.
+# UNCOMMENT THE LINES BELOW TO ENABLE EXPORT OF THE DATA TO CSV
+# write.csv(mys_confirmed, paste("MY_confirmed_",today(), ".csv",sep=""))
+# write.csv(mys_recovered, paste("MY_recovered_",today(), ".csv",sep=""))
+# write.csv(mys_death, paste("MY_death_",today(), ".csv",sep=""))
+
+# display of all data
+mys_confirmed
+mys_recovered
+mys_death
+```
+## Generation of different plots
+```{r fig.width=16, fig.height=10}
+
+confirmed <- ggplot(data=mys_confirmed,aes(x=Date, y=cumulative_cases))
+confirmed <- confirmed + geom_bar(stat="identity",fill="#5795ff", width=0.7)
+confirmed <- confirmed + ylab("Confirmed cases")
+confirmed <- confirmed + xlab("date")
+confirmed <- confirmed + scale_x_date(date_labels = "%b %d")
+confirmed <- confirmed + labs(title="No. of incident cases in Malaysia", subtitle=paste("data source:John Hopkins University (Updated: ", today(),")",sep=""))
+
+recovered <- ggplot(data=mys_recovered,aes(x=Date, y=cumulative_recovered))
+recovered <- recovered + geom_bar(stat="identity", fill="#00ba38", width=0.7)
+recovered <- recovered + ylab("Recovered cases")
+recovered <- recovered + xlab("date")
+recovered <- recovered + scale_x_date(date_labels = "%b %d")
+recovered <- recovered + labs(title="No. of recovered cases in Malaysia", subtitle=paste("updated: ", today(),"",sep=""))
+
+death <- ggplot(data=mys_death,aes(x=Date, y=cumulative_death))
+death <- death + geom_bar(stat="identity", fill="#f8766d", width=0.7)
+death <- death + ylab("Death cases")
+death <- death + xlab("date")
+death <- death + scale_x_date(date_labels = "%b %d")
+death <- death +labs(title="No. of death cases in Malaysia", subtitle=paste("updated: ", today(),"",sep=""))
+
+ggplotly(confirmed)
+ggplotly(recovered)
+ggplotly(death)
+
+overall_crd <- ggplot(data=mys_confirmed, aes(x=Date)) 
+overall_crd <- overall_crd + geom_bar(aes(y=cumulative_cases), stat="identity", position="identity", fill="lightblue", color="lightblue4")
+overall_crd <- overall_crd + geom_bar(aes(y=mys_recovered$cumulative_recovered), stat="identity", position="identity", fill="springgreen", color="springgreen4")
+overall_crd <- overall_crd + geom_bar(aes(y=mys_death$cumulative_death), stat="identity", position="identity", fill="pink", color="red")
+overall_crd <- overall_crd + labs(y="no. of cases",title=paste("Total confirmed, recovered and death cases up to ",today()-1," in Malaysia",sep=""),subtitle=paste("updated: ",today(),sep=""))
+
+
+overall <- ggplot(data=mys_confirmed, aes(x=Date)) 
+overall <- overall + geom_bar(aes(y=incident_cases), stat="identity", position="identity", fill="lightblue", color="lightblue4")
+overall <- overall + geom_bar(aes(y=mys_recovered$recovered_cases), stat="identity", position="identity",  fill="springgreen", color="springgreen4")
+overall <- overall + geom_bar(aes(y=mys_death$death_cases), stat="identity", position="identity", fill="pink", color="red")
+overall <- overall + labs(y="no. of cases",title=paste("Daily confirmed, recovered and death cases up to ",today()-1," in Malaysia",sep=""), subtitle=paste("updated: ",today(),sep=""))
+
+
+ggplotly(overall,dynamicTicks=FALSE)
+ggplotly(overall_crd)
+
+totalactive <- ggplot(data=mys_confirmed, aes(x=Date)) 
+totalactive <- totalactive + geom_bar(aes(y=(cumulative_cases-mys_death$cumulative_death-mys_recovered$cumulative_recovered)), stat="identity", position="identity", fill="lightblue", color="lightblue4")
+totalactive <- totalactive + labs(y="no. of cases",title=paste("Total active cases (exclude recovered and death) up to ",today()-1," in Malaysia",sep=""), subtitle=paste("updated: ",today(),sep=""))
+
+ggplotly(totalactive)
+```
+
+```{r fig.width=16, fig.height=10}
+# getting the rate of recovery or mortality (gamma) based on the data
+start_date  <- "2020-03-01" 
+end_date    <- "2020-04-10"
+
+Infected   <- mys_confirmed %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(incident_cases)
+Recovered  <- mys_recovered %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(recovered_cases)
+Death      <- mys_death     %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(death_cases)
+
+Infected_cumulative   <- mys_confirmed %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(cumulative_cases)
+Recovered_cumulative  <- mys_recovered %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(cumulative_recovered)
+Death_cumulative      <- mys_death     %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(cumulative_death)
+removed_rate_cumulative <- data.frame((( Death_cumulative + Recovered_cumulative ) / Infected_cumulative),Infected_cumulative,Recovered_cumulative,Death_cumulative)
+colnames(removed_rate_cumulative) <- c("removed_rate","Infected","Recovered","Death")
+
+Dateline   <- mys_death     %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(Date)
+
+# considering the rate from I to R, including those recovered, and those died from disease
+fatality_rate <- data.frame((( Death ) / Infected),Infected,Recovered,Death)
+colnames(fatality_rate) <- c("fatality_rate","Infected","Recovered","Death")
+fatality_rate$fatality_rate[is.nan(fatality_rate$fatality_rate)] <- 0 #replace the NaN value to 0
+
+fatalityRate <- ggplot(data=fatality_rate, aes(x=Dateline))
+fatalityRate <- fatalityRate + geom_line(aes(y=fatality_rate), color="red")
+fatalityRate <- fatalityRate + labs(y="fatality rates",x="no. of days", title="Daily fatality rates from 1 Mar 2020 in Malaysia", subtitle=paste(" no. of death divide by confirmed cases of the day.\nmax daily case fatality rate: ",round(max(fatality_rate$fatality_rate),4),"\n data up-to: ",today(),sep=""))
+
+
+fatality_rate_cumulative <- data.frame((( Death_cumulative ) / Infected_cumulative),Infected_cumulative,Recovered_cumulative,Death_cumulative)
+colnames(fatality_rate_cumulative) <- c("fatality_rate","Infected","Recovered","Death")
+
+fatalityRate_cumulative <- ggplot(data=fatality_rate_cumulative, aes(x=Dateline))
+fatalityRate_cumulative <- fatalityRate_cumulative + geom_line(aes(y=fatality_rate), color="red")
+fatalityRate_cumulative <- fatalityRate_cumulative + labs(y="fatality rates",x="no. of days", title="Cumulative fatality rates from 1 Mar 2020 in Malaysia", subtitle=paste("cumulated no. of death divide by cumulated confirmed cases.\nup-to-date case fatality rate: ", round(fatality_rate_cumulative$fatality_rate[length(fatality_rate_cumulative$fatality_rate)],4),"\n data up-to: ",today(),sep=""))
+
+ggplotly(fatalityRate)
+ggplotly(fatalityRate_cumulative)
+
+# considering the rate from I to R, including those recovered, and those died from disease
+recovery_rate <- data.frame((( Recovered ) / Infected),Infected,Recovered,Death)
+colnames(recovery_rate) <- c("recovery_rate","Infected","Recovered","Death")
+recovery_rate$recovery_rate[is.nan(recovery_rate$recovery_rate)] <- 0 #replace the NaN value to 0
+
+recoveryRate <- ggplot(data=recovery_rate, aes(x=Dateline))
+recoveryRate <- recoveryRate + geom_line(aes(y=recovery_rate), color="blue")
+recoveryRate <- recoveryRate + labs(y="recovery rates",x="no. of days", title="Daily recovery rates from 1 Mar 2020 in Malaysia", subtitle=paste(" no. of recovered divide by confirmed cases of the day.\nmax daily case recovery rate: ",round(max(recovery_rate$recovery_rate),4),"\n data up-to: ",today(),sep=""))
+
+recovery_rate_cumulative <- data.frame((( Recovered_cumulative ) / Infected_cumulative),Infected_cumulative,Recovered_cumulative,Death_cumulative)
+colnames(recovery_rate_cumulative) <- c("recovery_rate","Infected","Recovered","Death")
+
+recoveryRate_cumulative <- ggplot(data=recovery_rate_cumulative, aes(x=Dateline))
+recoveryRate_cumulative <- recoveryRate_cumulative + geom_line(aes(y=recovery_rate), color="blue")
+recoveryRate_cumulative <- recoveryRate_cumulative + labs(y="recovery rates",x="no. of days", title="Cumulative recovery rates from 1 Mar 2020 in Malaysia", subtitle=paste("cumulated no. of recovered divide by cumulated confirmed cases.\nup-to-date recovery rate: ", round(recovery_rate_cumulative$recovery_rate[length(recovery_rate_cumulative$recovery_rate)],4),"\n data up-to: ",today(),sep=""))
+
+ggplotly(recoveryRate)
+ggplotly(recoveryRate_cumulative)
+
+# Generate Removed Rate and Cumulative Removed Rate
+removed_rate <- data.frame((( Recovered+Death ) / Infected),Infected,Recovered,Death)
+colnames(removed_rate) <- c("removed_rate","Infected","Recovered","Death")
+removed_rate$removed_rate[is.nan(removed_rate$removed_rate)] <- 0 #replace the NaN value to 0
+
+removedRate <- ggplot(data=removed_rate, aes(x=Dateline))
+removedRate <- removedRate + geom_line(aes(y=removed_rate), color="black")
+removedRate <- removedRate + labs(y="removed rates",x="no. of days", title="Daily removed rates from 1 Mar 2020 in Malaysia", subtitle=paste(" no. of removed(recovered+death) divide by confirmed cases of the day.\nmax daily removed rate: ",round(max(removed_rate$removed_rate),4),"\n data up-to: ",today(),sep=""))
+
+removed_rate_cumulative <- data.frame((( Recovered_cumulative+Death_cumulative ) / Infected_cumulative),Infected_cumulative,Recovered_cumulative,Death_cumulative)
+colnames(removed_rate_cumulative) <- c("removed_rate","Infected","Recovered","Death")
+
+removedRate_cumulative <- ggplot(data=removed_rate_cumulative, aes(x=Dateline))
+removedRate_cumulative <- removedRate_cumulative + geom_line(aes(y=removed_rate), color="black")
+removedRate_cumulative <- removedRate_cumulative + labs(y="removed rates",x="no. of days", title="Cumulative removed rates from 1 Mar 2020 in Malaysia", subtitle=paste("cumulated no. of removed(recovered+death) divide by cumulated confirmed cases.\nup-to-date removed rate: ", round(removed_rate_cumulative$removed_rate[length(removed_rate_cumulative$removed_rate)],4),"\n data up-to: ",today(),sep=""))
+
+
+# Generate a graph that combined cumulative removed, recovered, fatality
+combined_cumulative <- ggplot(data=removed_rate_cumulative, aes(x=1:length(removed_rate)))
+combined_cumulative <- combined_cumulative + geom_line(aes(y=removed_rate), color="black")
+combined_cumulative <- combined_cumulative + geom_line(aes(y=recovery_rate_cumulative$recovery_rate), color="blue")
+combined_cumulative <- combined_cumulative + geom_line(aes(y=fatality_rate_cumulative$fatality_rate), color="red")
+combined_cumulative <- combined_cumulative + labs(y="rates", x="no. of days", title="Cumulative recovery, fatality, and removed rates of COVID19 in Malaysia from 01-Mar-2020", subtitle=paste("data up-to: ",today(),sep=""))
+
+ggplotly(combined_cumulative, tooltip=c("x","y","colour"))
+```
+
+```{r message=FALSE}
+# SIR model
+# S - Susceptible, I - Infected, R - Removed (recovered or death)
+SIR <- function(time, state, parameters) {
+  par <- as.list(c(state, parameters))
+  with(par, {
+    dS <- (-beta * I * S) / N
+    dI <- ((beta * I * S) / N) - (gamma * I)
+    dR <- gamma * I
+    list(c(dS, dI, dR))
+  })
+}
+
+# RSS 
+RSS <- function(parameters) {
+  names(parameters) <- c("beta","gamma")
+  out <- ode(y=init, times=Day, func=SIR, parms=parameters)
+  fit <- out[,3]
+  sum((Infected - fit)^2)
+}
+```
+
