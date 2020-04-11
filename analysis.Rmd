@@ -235,12 +235,38 @@ fitted_projected <- fitted_projected %>% mutate(Date=ymd(start_date)+days(t-1)) 
 
 # write.csv(fitted_projected, paste("Projected_based_on_",start_date,"_to_",end_date,".csv",sep=""))
 
-fitted_projected%>%ggplot(aes(x=Date))+geom_line(aes(y=I), colour="red")+geom_point(aes(y=Active_cases), color="orange")+geom_line(aes(y=S),colour="blue")+geom_line(aes(y=R),colour="green")+labs(y="Active incidence", title="COVID19 projected vs observed cumulative incidence in Malaysia",subtitle=paste("red=Projected Infected (I)\ngreen=Projected Removed (R)\nblue=Projected Susceptible (S)\norange=observed incidence\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))+scale_y_continuous(labels=scales::comma)
+sirplot <- ggplot(data=fitted_projected, aes(x=Date))
+sirplot <- sirplot + geom_line(aes(y=I), colour="red")
+sirplot <- sirplot + geom_point(aes(y=Active_cases), color="orange")
+sirplot <- sirplot + geom_line(aes(y=S),colour="blue")
+sirplot <- sirplot + geom_line(aes(y=R),colour="green")
+sirplot <- sirplot + labs(y="Active incidence", 
+                          title="COVID19 projected vs observed cumulative incidence in Malaysia",
+                          subtitle=paste("red=Projected Infected (I)\ngreen=Projected Removed (R)\nblue=Projected Susceptible (S)\norange=observed incidence\nR0=",
+                                         round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))
+sirplot <- sirplot + scale_y_continuous(labels=scales::comma)
 
-fitted_projected%>%ggplot(aes(x=Date))+geom_point(aes(y=Active_cases), color="orange")+geom_line(aes(y=I), colour="red")+labs(y="Active incidence", title="COVID19 fitted and predicted active incidence in Malaysia up to 30 Sept 2020",subtitle=paste("(red=Projected Infected, orange=observed incidence)\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))+scale_y_continuous(trans='log10')
 
-fitted_projected%>%ggplot(aes(x=Date))+geom_point(aes(y=Active_cases), color="orange")+geom_line(aes(y=I), colour="red")+labs(y="Active incidence", title="COVID19 fitted and predicted active incidence in Malaysia up to 30 Sept 2020",subtitle=paste("(red=Projected Infected, orange=observed incidence)\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))+scale_y_continuous(labels=scales::comma)
+iplot_log <- ggplot(data=fitted_projected, aes(x=Date))
+iplot_log <- iplot_log + geom_point(aes(y=Active_cases), color="orange")
+iplot_log <- iplot_log + geom_line(aes(y=I), colour="red")
+iplot_log <- iplot_log + labs(y="Active incidence", title="COVID19 fitted and predicted active incidence in Malaysia up to 30 Sept 2020",
+                              subtitle=paste("(red=Projected Infected, orange=observed incidence)\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",
+                                             round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))
+iplot_log <- iplot_log + scale_y_continuous(trans='log10')
 
+
+iplot <- ggplot(data=fitted_projected, aes(x=Date))
+iplot <- iplot + geom_point(aes(y=Active_cases), color="orange")
+iplot <- iplot + geom_line(aes(y=I), colour="red")
+iplot <- iplot + labs(y="Active incidence", title="COVID19 fitted and predicted active incidence in Malaysia up to 30 Sept 2020",
+                      subtitle=paste("(red=Projected Infected, orange=observed incidence)\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",
+                                     round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))
+iplot <- iplot + scale_y_continuous(labels=scales::comma)
+
+ggplotly(sirplot)
+ggplotly(iplot_log)
+ggplotly(iplot)
 
 Opt$message
 Opt_par
