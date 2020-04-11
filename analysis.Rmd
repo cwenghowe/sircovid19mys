@@ -39,6 +39,8 @@ mys_death <- read_csv(global_death_jhu_url) %>% rename(province = "Province/Stat
 mys_confirmed
 mys_recovered
 mys_death
+mys_active <- data.frame(mys_confirmed$Date, mys_confirmed$cumulative_cases-mys_recovered$cumulative_recovered - mys_death$cumulative_death)
+colnames(mys_active) = c("Date","Active_cases")
 ```
 ## Generation of different plots
 ```{r fig.width=16, fig.height=10}
@@ -193,7 +195,55 @@ RSS <- function(parameters) {
   names(parameters) <- c("beta","gamma")
   out <- ode(y=init, times=Day, func=SIR, parms=parameters)
   fit <- out[,3]
-  sum((Infected - fit)^2)
+  sum((Active - fit)^2)
 }
 ```
 
+```{r message=FALSE, fig.height=10, fig.width=15}
+# percentage of population implement social distancing (assumption)
+social_distance <- 0.7
+
+# initial population of Malaysia considering exclude the population who implemented social distancing
+# N <- 32600000 * (1-social_distance)
+
+# Total population
+N <- 32600000
+
+# range of period to be analyzed
+start_date  <- "2020-04-01" 
+end_date    <- "2020-04-10"
+
+Infected   <- mys_confirmed %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(cumulative_cases)
+Recovered  <- mys_recovered %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(cumulative_recovered)
+Death      <- mys_death     %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(cumulative_death)
+Active     <- Infected - Recovered - Death
+
+Day <- 1:(length(Infected))
+
+# Initialization
+init <- c(S=N-Infected[1]-Recovered[1]-Death[1], I=Infected[1]-Death[1]-Recovered[1], R=Recovered[1]+Death[1])
+
+Opt <- optim(par=c(0.5,0.02), fn=RSS, method="L-BFGS-B", upper=c(1,1/7), lower=c(1/14,1/42))
+Opt_par <- setNames(Opt$par, c("beta", "gamma"))
+
+R0 <- (Opt_par['beta']/Opt_par['gamma'])
+names(R0) <- "R0"
+
+t <- 1: as.integer(ymd("2020-09-30")-ymd(start_date))
+fitted_projected <- data.frame(ode(y=init, times=t, func=SIR, parms=Opt_par))
+fitted_projected <- fitted_projected %>% mutate(Date=ymd(start_date)+days(t-1)) %>% left_join(mys_active%>% ungroup()%>%select(Date, Active_cases))
+
+# write.csv(fitted_projected, paste("Projected_based_on_",start_date,"_to_",end_date,".csv",sep=""))
+
+fitted_projected%>%ggplot(aes(x=Date))+geom_line(aes(y=I), colour="red")+geom_point(aes(y=Active_cases), color="orange")+geom_line(aes(y=S),colour="blue")+geom_line(aes(y=R),colour="green")+labs(y="Active incidence", title="COVID19 projected vs observed cumulative incidence in Malaysia",subtitle=paste("red=Projected Infected (I)\ngreen=Projected Removed (R)\nblue=Projected Susceptible (S)\norange=observed incidence\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))+scale_y_continuous(labels=scales::comma)
+
+fitted_projected%>%ggplot(aes(x=Date))+geom_point(aes(y=Active_cases), color="orange")+geom_line(aes(y=I), colour="red")+labs(y="Active incidence", title="COVID19 fitted and predicted active incidence in Malaysia up to 30 Sept 2020",subtitle=paste("(red=Projected Infected, orange=observed incidence)\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))+scale_y_continuous(trans='log10')
+
+fitted_projected%>%ggplot(aes(x=Date))+geom_point(aes(y=Active_cases), color="orange")+geom_line(aes(y=I), colour="red")+labs(y="Active incidence", title="COVID19 fitted and predicted active incidence in Malaysia up to 30 Sept 2020",subtitle=paste("(red=Projected Infected, orange=observed incidence)\nR0=",round(R0,4)," beta=",round(Opt_par['beta'],4), " gamma=",round(Opt_par['gamma'],4),"\n\nUpdated:",today(),sep=""))+scale_y_continuous(labels=scales::comma)
+
+
+Opt$message
+Opt_par
+R0
+
+```
