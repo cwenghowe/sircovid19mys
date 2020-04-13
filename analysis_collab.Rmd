@@ -59,25 +59,36 @@ RSS <- function(parameters) {
 # Total population
 N <- 32.68E6  # 4th quarter, 2019
 
-# range of period to be analyzed
+# Uncomment under each headers to perform SIR for the period
+# % population implement social distancing (assumption) = % obey MCO?
+
 # Pre MCO
+# =======
 name = "Pre MCO"
 start_date  <- "2020-03-01"
 end_date    <- "2020-03-17"
-# percentage of population implement social distancing (assumption)
 social_distance <- 0  # no social distance
 
 # MCO 1
+# =====
 # name = "MCO 1"
-# start_date  <- "2020-03-18" 
+# start_date  <- "2020-03-18"
 # end_date    <- "2020-03-31"
-# social_distance <- 0.7
+# social_distance <- 0.9
 
 # MCO 2
-# name = "MCO 2"
-# start_date  <- "2020-04-01" 
+# =====
+# name = "MCO 2a"
+# start_date  <- "2020-04-01"
+# end_date    <- "2020-04-07"
+# social_distance <- 0.95
+
+# MCO 2b
+# ======
+# name = "MCO 2b"
+# start_date  <- "2020-04-08"
 # end_date    <- "2020-04-14"
-# social_distance <- 0.9
+# social_distance <- 0.97
 
 # initial population of Malaysia considering exclude the population who implemented social distancing
 N <- N * (1 - social_distance)
@@ -96,18 +107,19 @@ init <- c(S=N-Infected[1]-Recovered[1]-Death[1], I=Infected[1]-Death[1]-Recovere
 ## Run SIR model
 ```{r}
 # SIR parameters
-parameters_values <- c(1/7, 1/21)  # seem no longer stuck at local minima if take middle values?
-parameters_values_lower <- c(1/14, 1/42)
-parameters_values_upper <- c(1, 1/7)
+parameters_values <- c(1/2, 1/14)  # set reasonable start, R0 = 7
+parameters_values_lower <- c(1/100, 1/49)  # days recover 6 weeks, set around 7 weeks for flexibility
+parameters_values_upper <- c(1, 1/11)  # updated to min 11 days
 
 Opt <- optim(parameters_values, RSS, method = "L-BFGS-B", lower = parameters_values_lower, upper = parameters_values_upper)
 Opt$message  # make sure converge
 Opt_par <- setNames(Opt$par, c("beta", "gamma"))
 R0 <- (Opt_par['beta']/Opt_par['gamma']); names(R0) <- "R0"
 parameters_values_lower; parameters_values; parameters_values_upper  # just to check whether values stuck
-cat("beta = ", Opt_par[[1]], ", infectious contact rate (/person/day)\n",
-    "gamma = ", Opt_par[[2]], ", recovery rate (/day)\n",
-    "R_0 = ", R0, " number infected/person",
+cat("beta = ", Opt_par[['beta']], ", infectious contact rate (/person/day)\n",
+    "gamma = ", Opt_par[['gamma']], ", recovery rate (/day)\n",
+    "R_0 = ", R0, " number infected/person\n",
+    "Recovery days = ", 1/Opt_par[['gamma']], " days",
     sep = "")
 ```
 
@@ -139,10 +151,10 @@ colors = c("Susceptible" = "black", "Recovered" = "green", "Infectious" = "red",
 # plot fit the data
 fitplot1 = ggplot(fitted_projected, aes(x = Date)) + geom_line(aes(y = I, color = "Infectious")) + 
   geom_point(aes(y = A, color = "Observed Active")) +
-  labs(y = "Infectious", title = paste("COVID-19 fitted vs Observed Active Cases in Malaysia,", name, "log10")) +
+  labs(y = "Infectious", title = paste("COVID-19 fitted vs Observed Active Cases in Malaysia,", name)) +
   scale_colour_manual(values = colors, name = "")
 fitplot1
-ggsave("sir_mco2.png", width = 16, height = 10)
+ggsave(paste0("fit", name, ".png"), width = 16, height = 10)
 
 # plot fit the data, in log10
 fitplot1_log = ggplot(fitted_projected, aes(x = Date)) + geom_line(aes(y = I, color = "Infectious")) + 
@@ -150,7 +162,7 @@ fitplot1_log = ggplot(fitted_projected, aes(x = Date)) + geom_line(aes(y = I, co
   labs(y = "Infectious", title = paste("COVID-19 fitted vs Observed Active Cases in Malaysia,", name, "log10")) +
   scale_colour_manual(values = colors, name = "")  
 fitplot1_log
-ggsave("sir_mco2_log.png", width = 16, height = 10)
+ggsave(paste0("fit", name, "_log.png"), width = 16, height = 10)
 ```
 
 ## Projected Data
@@ -194,7 +206,7 @@ sirplot1 = ggplot(fitted_projected, aes(x = Date)) +
            label = paste0("Peak on ", format(max_date, "%d/%m/%y")), angle = 0) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 sirplot1
-ggsave("sir_mco2.png", width = 16, height = 10)
+ggsave(paste0("sir", name, ".png"), width = 16, height = 10)
 
 # plot projection data, in log10
 sirplot1_log = ggplot(fitted_projected, aes(x = Date)) + 
@@ -216,5 +228,5 @@ sirplot1_log = ggplot(fitted_projected, aes(x = Date)) +
            label = paste0("Peak on ", format(max_date, "%d/%m/%y")), angle = 0) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 sirplot1_log
-ggsave("sir_mco2_log.png", width = 16, height = 10)
+ggsave(paste0("sir", name, "_log.png"), width = 16, height = 10)
 ```
