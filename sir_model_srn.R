@@ -98,11 +98,12 @@ Day        <- 1:(length(Date))
 # Total population
 N <- 32.68E6  # 4th quarter, 2019
 # initial susceptible population of Malaysia
-denom = 1000
-susceptible = seq(1, denom/2, 1)  # in 0.x percent
-N <- N * (susceptible/denom)
+p_start = 0.0001
+p_end = 0.1  # max p of population
+p_step = 0.00005
+susceptible = seq(p_start, p_end, p_step)
+N <- N * susceptible
 inits <- data.frame(S=N-Infected[1]-Recovered[1]-Death[1], I=Infected[1]-Death[1]-Recovered[1], R=Recovered[1]+Death[1])
-inits[1,]
 
 ## Run SIR model
 
