@@ -1,7 +1,7 @@
 # ====================================================
 # title: "Covid-19 SIR Modeling Malaysia"
 # author: "Chan Weng Howe (UTM), Wan Nor Arifin (USM)"
-# Fit both S and R
+# Fit both I and R
 # ====================================================
 
 
