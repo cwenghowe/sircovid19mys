@@ -24,7 +24,7 @@ where *S* = Susceptible population, *I* = Infected (active), *R* = Recovered (re
 The basic reproduction number, $R_0$ is defined as:
 
 $$
-R_0 = \frac{\gamma}{\beta}
+R_0 = \frac{\beta}{\gamma}
 $$
 $R_0$ can also be seen as $\frac{T_r}{T_c}$, i.e. the number of contacts before someone recovers, during which he is infectious.
 
