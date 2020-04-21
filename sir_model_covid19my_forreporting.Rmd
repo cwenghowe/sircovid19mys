@@ -1,0 +1,413 @@
+---
+title: 'SIR Modeling: Covid19 in Malaysia'
+author: "Chan Weng Howe (UTM) Wan Nor Arifin (USM)"
+date: "`r format(Sys.time(), '%a, %e %b %Y %l:%M:%S %p')`"
+output: html_document
+---
+
+## Libraries
+```{r message=FALSE}
+library(tidyverse)
+library(deSolve)
+library(lubridate)
+library(ggpubr)
+library(plotly)
+```
+
+## Fetch local datasets
+```{r message=FALSE, warning=FALSE}
+mys_data = read_csv("https://wnarifin.github.com/covid-19-malaysia/covid-19_my_full.csv") %>% select(1:10) %>% rename(Date = "date")
+mys_data$active = with(mys_data, total_cases - total_deaths - total_recover)
+mys_data
+```
+## SIR Model & Residual Sum of Squares
+```{r}
+# S - Susceptible, I - Infected, R - Removed (recovered + death), n - initial susceptible population
+SIR = function(time, state, parameters) {
+  par = as.list(c(state, parameters))
+  with(par, {
+    dS = (-beta * I * S) / n
+    dI = ((beta * I * S) / n) - (gamma * I)
+    dR = gamma * I
+    list(c(dS, dI, dR))
+  })
+}
+
+# RSS 
+RSS = function(parameters) {
+  names(parameters) = c("beta","gamma")
+  out = ode(y=init, times=Day, func=SIR, parms=parameters)
+  fit1 = out[,3]
+  fit2 = out[,4]
+  w1 = 4
+  w2 = 1
+  # w1*sum((Active - fit1)^2) + w2*sum((Removed - fit2)^2) # find min RSS on original scale, weighted
+  w1*sum((log10(Active) - log10(fit1))^2) + w2*sum((log10(Removed) - log10(fit2))^2)  # find min RSS on log scale, weighted
+  # give weight to less well predicted curve
+}
+```
+
+## Parameters
+```{r message=FALSE, warning=FALSE}
+# name = ""
+# start_date  = "2020-04-01"
+# end_date    = "2020-04-14"
+
+name = ""
+start_date = "2020-03-25"
+end_date   = today()
+
+# Basic info from data
+Infected   = mys_data %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(total_cases)
+Recovered  = mys_data %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(total_recover)
+Death      = mys_data %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(total_deaths)
+Active     = Infected - Recovered - Death
+Removed    = Recovered + Death
+Date       = mys_data %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(Date)
+Day        = 1:(length(Date))
+
+
+```
+
+```{r message=FALSE}
+# SIR parameters
+parameters_values       = c(1/2, 1/14)  # set reasonable start, R0 = 7
+parameters_values_lower = c(1/100, 1/19)  # days recover 6 weeks, reduce bound bcs not many severe, observed show quick recovery
+parameters_values_upper = c(1, 1/11)  # updated to min 11 days
+        
+# Placeholder to ind optimal susceptible population
+N_in_steps = data.frame(step=1:7, N=rep(NA,7), Loc=rep(NA,7))
+
+# Initial values
+N           = 32.68E6/2  # 4th quarter, 2019
+Opt_min_loc = 1  # Optimum minimum n location in output vector
+step_i      = 1  # initialize step
+
+# Step 1-7
+for (step_i in 1:7) {
+  cat("=== Iteration ", step_i, ": Finding optimal values of beta, gamma and n ===\n", sep ="")
+  N = N[Opt_min_loc]  # Susceptible population from previous Step
+  # initial susceptible population of Malaysia
+  p_start = 0.1
+  p_end = 2  # max p of population, also include up direction
+  p_step = 0.1
+  susceptible = seq(p_start, p_end, p_step)
+  N = N * susceptible
+  inits = data.frame(S=N-Infected[1]-Recovered[1]-Death[1], I=Infected[1]-Death[1]-Recovered[1], R=Recovered[1]+Death[1])
+  Opts = vector("list", length(N))
+  for (i in 1:length(N)) {
+    n = N[i]
+    init = setNames(as.numeric(inits[i,]), c("S", "I", "R"))
+    Opt_ = optim(parameters_values, RSS, method = "L-BFGS-B", lower = parameters_values_lower, upper = parameters_values_upper)
+    Opts[i]  <- list(Opt_)
+  }
+  Opt_value = sapply(Opts, function(x) x$value) # getting the min RSS
+  Opt_min_loc = which(Opt_value == min(Opt_value)) # get the location / index of the data with min RSS
+  N_in_steps[step_i, "N"] = N[Opt_min_loc]
+  N_in_steps[step_i, "Loc"] = Opt_min_loc
+  cat("= Found n: ", N[Opt_min_loc], " at location ", Opt_min_loc, " in vector N \n", sep = "")
+  cat("= Optimize beta / gamma: ", Opts[[Opt_min_loc]]$par[1]," / ",Opts[[Opt_min_loc]]$par[2],"\n\n", sep = "")
+  step_i = step_i + 1
+  if (step_i == 8) {
+    # cat("=== Finalizing results ===\n")
+    # cat("==========================\n")
+    print(N_in_steps)
+  }
+}
+
+# Saving optimized parameters
+Opt = Opts[[Opt_min_loc]]
+Opt$message  # make sure converge
+Opt_par = setNames(Opt$par, c("beta", "gamma"))
+R0 = (Opt_par['beta']/Opt_par['gamma']); names(R0) = "R0"
+cat("\nParameters boundary (upper, init, lower)\n")
+parameters_values_lower; parameters_values; parameters_values_upper  # just to check whether values in range
+# Print final parameters
+cat("\nFinalized parameters:\n")
+cat("---------------------\n")
+cat("beta          = ", Opt_par[['beta']], ", infectious contact rate (/person/day)\n",
+    "gamma         = ", Opt_par[['gamma']], ", recovery rate (/day)\n",
+    "R_0           = ", R0, " number infected/person\n",
+    "Recovery days = ", 1/Opt_par[['gamma']], " days",
+    sep = "")
+
+# time in days for fitting
+t = 1:max(Day)
+n = N[Opt_min_loc]
+init = setNames(as.numeric(inits[Opt_min_loc,]), c("S", "I", "R"))
+# get the fitted values from our SIR model
+fitted_projected = data.frame(ode(y=init, times=t, func=SIR, parms=Opt_par))
+# add Date, Active, Removed
+fitted_projected$Date = Date
+fitted_projected$A = Active
+fitted_projected$Rm = Removed
+fitted_projected
+
+MAPE_A <- mean(abs(log10(fitted_projected$A) - log10(fitted_projected$I)) / log10(fitted_projected$A))
+ACC_A  <- 1 - MAPE_A
+MAPE_R <- mean(abs(log10(fitted_projected$Rm) - log10(fitted_projected$R)) / log10(fitted_projected$Rm))
+ACC_R  <- 1 - MAPE_R
+cat("\nMeasurements\n")
+cat("============\n")
+cat("MAPE (I): ",MAPE_A,"\n")
+cat("ACCURACY: ",ACC_A," (",round(ACC_A*100,2),"% ) \n")
+cat("MAPE (R): ",MAPE_R,"\n")
+cat("ACCURACY: ",ACC_R," (",round(ACC_R*100,2),"% ) \n\n")
+
+tss1 = sum((log10(fitted_projected$A) - mean(log10(fitted_projected$A)))^2); tss1
+rss1 = sum((log10(fitted_projected$A) - log10(fitted_projected$I))^2); rss1
+R2_1 = 1 - (rss1 / tss1); R2_1
+tss2 = sum((log10(fitted_projected$Rm) - mean(log10(fitted_projected$Rm)))^2); tss2
+rss2 = sum((log10(fitted_projected$Rm) - log10(fitted_projected$R))^2); rss2
+R2_2 = 1 - (rss2 / tss2); R2_2
+
+```
+
+```{r fig.height=10, fig.width=15}
+# time in days for fitting
+t = 1:max(Day)
+n = N[Opt_min_loc]
+init = setNames(as.numeric(inits[Opt_min_loc,]), c("S", "I", "R"))
+# get the fitted values from our SIR model
+fitted_projected = data.frame(ode(y=init, times=t, func=SIR, parms=Opt_par))
+# add Date, Active, Removed
+fitted_projected$Date = Date
+fitted_projected$A = Active
+fitted_projected$Rm = Removed
+fitted_projected
+
+MAPE_A <- mean(abs(log10(fitted_projected$A) - log10(fitted_projected$I)) / log10(fitted_projected$A))
+ACC_A  <- 1 - MAPE_A
+MAPE_R <- mean(abs(log10(fitted_projected$Rm) - log10(fitted_projected$R)) / log10(fitted_projected$Rm))
+ACC_R  <- 1 - MAPE_R
+
+tss1 = sum((log10(fitted_projected$A) - mean(log10(fitted_projected$A)))^2); tss1
+rss1 = sum((log10(fitted_projected$A) - log10(fitted_projected$I))^2); rss1
+R2_1 = 1 - (rss1 / tss1); R2_1
+tss2 = sum((log10(fitted_projected$Rm) - mean(log10(fitted_projected$Rm)))^2); tss2
+rss2 = sum((log10(fitted_projected$Rm) - log10(fitted_projected$R))^2); rss2
+R2_2 = 1 - (rss2 / tss2); R2_2
+
+max_I = which(fitted_projected$I == max(fitted_projected$I))
+max_date = fitted_projected$Date[max_I]
+max_I_val = fitted_projected$I[max_I]
+
+max_A = which(fitted_projected$A == max(fitted_projected$A))
+max_date_A = fitted_projected$Date[max_A]
+max_A_val = fitted_projected$A[max_A]
+
+
+# color settings
+colors = c("Susceptible (S)" = "black", "Removed (R)" = "green", "Infectious (I)" = "red", 
+           "(Actual) Active" = "orange", "(Actual) Recovered + Death" = "blue")
+
+# plot fit the data
+fitplot1 = ggplot(fitted_projected, aes(x = Date)) + geom_line(aes(y = I, color = "Infectious (I)")) + 
+  geom_point(aes(y = A, color = "(Actual) Active")) + geom_line(aes(y = R, color = "Removed (R)")) + 
+  geom_point(aes(y = Rm, color = "(Actual) Recovered + Death")) +
+  labs(y = "Number of cases", title = paste("COVID-19 SIR model Malaysia, fitted vs actual", name),
+       subtitle = paste("Projection from data:", start_date, "to", fitted_projected$Date[max(Day)]),
+       color = paste0("MAPE (I) = ", round(MAPE_A,3), " (",round(ACC_A*100,2),"%) \n",
+                      "MAPE (R) = ", round(MAPE_R,3), " (",round(ACC_R*100,2),"%) \n\n",
+                      "R square 1 (I) = ", round(R2_1,3), "\n",
+                      "R square 2 (R) = ", round(R2_2,3), "\n",
+                      "R0 = ", round(R0, 3), "\n",
+                      "beta = ", round(Opt_par[1], 3), "\n",
+                      "gamma = ", round(Opt_par[2], 3), "\n",
+                      "Susceptible = ", round(n), "\n",
+                      "Peak Active = ", round(max(fitted_projected$I)), "\n")) +
+  geom_vline(xintercept = as.numeric(as.Date(max_date)), linetype = "dashed", size=0.5, color="red") +
+  annotate(geom = "text", x = as.Date(max_date)+1.5, y = n*1.3, 
+           label = paste0("Projected Peak\n", format(max_date, "%d/%m/%y"), "\n(",round(max_I_val,0)," cases)"), angle = 0) +
+  geom_vline(xintercept = as.numeric(as.Date(max_date_A)), linetype = "dashed", size=0.5) +
+  annotate(geom = "text", x = as.Date(max_date_A)+1.5, y = n*1.0, 
+           label = paste0("Actual Peak\nbased on data\n", format(max_date_A, "%d/%m/%y"), "\n(",max_A_val," cases)"),angle = 0)+
+  scale_colour_manual(values = colors)
+fitplot1
+
+fitplot1_log = ggplot(fitted_projected, aes(x = Date)) + geom_line(aes(y = I, color = "Infectious (I)")) + 
+  geom_point(aes(y = A, color = "(Actual) Active")) + geom_line(aes(y = R, color = "Removed (R)")) + 
+  geom_point(aes(y = Rm, color = "(Actual) Recovered + Death")) +
+  scale_y_log10(labels = scales::comma) +
+  labs(y = "Number of cases", title = paste("COVID-19 SIR model Malaysia, fitted vs actual (log scale)", name),
+       subtitle = paste("Projection from data:", start_date, "to", fitted_projected$Date[max(Day)]),
+       color = paste0("MAPE (I) = ", round(MAPE_A,3), " (",round(ACC_A*100,2),"%) \n",
+                      "MAPE (R) = ", round(MAPE_R,3), " (",round(ACC_R*100,2),"%) \n\n",
+                      "R square 1 (I) = ", round(R2_1,3), "\n",
+                      "R square 2 (R) = ", round(R2_2,3), "\n",
+                      "R0 = ", round(R0, 3), "\n",
+                      "beta = ", round(Opt_par[1], 3), "\n",
+                      "gamma = ", round(Opt_par[2], 3), "\n",
+                      "Susceptible = ", round(n), "\n",
+                      "Peak Active = ", round(max(fitted_projected$I)), "\n")) +
+  geom_vline(xintercept = as.numeric(as.Date(max_date)), linetype = "dashed", size=0.5, color="red") +
+  annotate(geom = "text", x = as.Date(max_date)+1.5, y = log10(n)*100, 
+           label = paste0("Projected Peak\n", format(max_date, "%d/%m/%y"), "\n(",round(max_I_val,0)," cases)"), angle = 0) +
+  geom_vline(xintercept = as.numeric(as.Date(max_date_A)), linetype = "dashed", size=0.5) +
+  annotate(geom = "text", x = as.Date(max_date_A)+1.5, y = log10(n)*100, 
+           label = paste0("Actual Peak\nbased on data\n", format(max_date_A, "%d/%m/%y"), "\n(",max_A_val," cases)"),angle = 0)+
+  scale_colour_manual(values = colors)
+fitplot1_log
+
+```
+
+
+```{r fig.height=10, fig,width=15}
+# last date to project
+last_date = "2020-06-30"
+# time in days for predictions
+t = 1:as.integer(ymd(last_date) + 1 - ymd(start_date))
+# get the fitted values from our SIR model
+fitted_projected = data.frame(ode(y=init, times=t, func=SIR, parms=Opt_par))
+fitted_projected2 = data.frame(ode(y=init, times=t, func=SIR, parms=Opt_par))
+# add add Date, Active, Removed
+fitted_projected$Date = ymd(start_date) + days(t - 1)
+fitted_projected2$Date = ymd(start_date) + days(t - 1)
+
+fitted_projected$A = c(Active, rep(NA, length(t) - length(Active)))
+fitted_projected$Rm = c(Removed, rep(NA, length(t) - length(Active)))
+head(fitted_projected, 10); tail(fitted_projected, 10)
+# date of peak active cases
+# max_I = which(round(fitted_projected$I) == round(max(fitted_projected$I)))  # at times this works better
+# max_I = which(fitted_projected$I == max(fitted_projected$I))
+# max_date = fitted_projected$Date[max_I]
+
+max_I = which(fitted_projected$I == max(fitted_projected$I))
+max_date = fitted_projected$Date[max_I]
+max_I_val = fitted_projected$I[max_I]
+
+max_A = which(fitted_projected$A == max(fitted_projected$A))
+max_date_A = fitted_projected$Date[max_A]
+max_A_val = fitted_projected$A[max_A]
+
+# add cumulative infected cases
+fitted_projected$total_infected = fitted_projected$I + fitted_projected$R
+
+# predicted new cases today
+new_today = (fitted_projected[fitted_projected$Date == today(), ] - fitted_projected[fitted_projected$Date == today()-1, ])$total_infected
+
+# maximum cumulative cases, date. May add to plot.
+# fitted_projected$Date[min(which(round(fitted_projected$total_infected) == max(round(fitted_projected$total_infected))))]
+# fitted_projected[min(which(round(fitted_projected$total_infected) == max(round(fitted_projected$total_infected)))),]
+
+
+
+sdate      = "2020-03-25"
+edate      = "2020-04-20"
+Inft       = mys_data %>% filter(Date>=ymd(sdate), Date<=ymd(edate)) %>% pull(total_cases)
+Recov      = mys_data %>% filter(Date>=ymd(sdate), Date<=ymd(edate)) %>% pull(total_recover)
+Dead       = mys_data %>% filter(Date>=ymd(sdate), Date<=ymd(edate)) %>% pull(total_deaths)
+Act        = Inft - Recov - Dead
+Rem        = Recov + Dead
+D          = mys_data %>% filter(Date>=ymd(start_date), Date<=ymd(end_date)) %>% pull(Date)
+fitted_projected2$A = c(Act, rep(NA, length(t) - length(Rem)))
+fitted_projected2$Rm = c(Rem, rep(NA, length(t) - length(Rem)))
+
+# color settings
+colors = c("Susceptible (S)" = "black", "Removed (R)" = "green", "Infectious (I)" = "red", 
+           "(Actual) Active" = "orange", "(Actual) Recovered + Death" = "blue")
+
+# plot projection data
+sirplot1 = ggplot(fitted_projected, aes(x = Date)) + 
+  geom_line(aes(y = I, color = "Infectious (I)")) + 
+  geom_line(aes(y = S, color = "Susceptible (S)")) + 
+  geom_line(aes(y = R, color = "Removed (R)")) +
+  geom_point(aes(y = fitted_projected2$A, color = "(Actual) Active")) +
+  geom_point(aes(y = fitted_projected2$Rm, color = "(Actual) Recovered + Death")) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_date(date_breaks = "14 day", date_labels = "%d/%m/%y") + 
+  scale_colour_manual(values = colors) +
+  labs(y = "Number of cases", title = paste("COVID-19 SIR model Malaysia,", name),
+       subtitle = paste("Projection from data:", start_date, "to", fitted_projected$Date[max(Day)]," projected up to: ",last_date),
+      color = paste0("MAPE (I) = ", round(MAPE_A,3), " (",round(ACC_A*100,2),"%) \n",
+                      "MAPE (R) = ", round(MAPE_R,3), " (",round(ACC_R*100,2),"%) \n\n",
+                      "R square 1 (I) = ", round(R2_1,3), "\n",
+                      "R square 2 (R) = ", round(R2_2,3), "\n",
+                      "R0 = ", round(R0, 3), "\n",
+                      "beta = ", round(Opt_par[1], 3), "\n",
+                      "gamma = ", round(Opt_par[2], 3), "\n",
+                      "Susceptible = ", round(n), "\n",
+                      "Peak Active = ", round(max(fitted_projected$I)), "\n",
+                      "Maximum Total Infected = ", round(max(fitted_projected$total_infected)))) +
+  geom_vline(xintercept = as.numeric(as.Date(max_date)), linetype = "dashed", size=0.5, color="red") +
+  annotate(geom = "text", x = as.Date(max_date)+1.5, y = n*0.9, 
+           label = paste0("Projected Peak\n", format(max_date, "%d/%m/%y"), "\n(",round(max_I_val,0)," cases)"), angle = 0) +
+  geom_vline(xintercept = as.numeric(as.Date(today())), linetype = "dashed", color = "blue", size=0.5) +
+  annotate(geom = "text", x = as.Date(today())+2, y = n*0.7, 
+           label = paste0("Today's Prediction \n(", format(today(), "%d/%m/%y"), ")\n",
+                          "Total Cases  = ", round(fitted_projected[fitted_projected$Date == today(), "total_infected"]),
+                          "\nActive Cases = ",round(fitted_projected[fitted_projected$Date == today(), "I"]),
+                          "\nNew Cases = ", round(new_today)), angle = 0) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  sirplot1
+  
+  sirplot1_log = ggplot(fitted_projected, aes(x = Date)) + 
+  geom_line(aes(y = I, color = "Infectious (I)")) + 
+  geom_line(aes(y = S, color = "Susceptible (S)")) + 
+  geom_line(aes(y = R, color = "Removed (R)")) +
+  geom_point(aes(y = fitted_projected2$A, color = "(Actual) Active")) +
+  geom_point(aes(y = fitted_projected2$Rm, color = "(Actual) Recovered + Death")) +
+  scale_y_log10(labels = scales::comma) +
+  scale_x_date(date_breaks = "14 day", date_labels = "%d/%m/%y") + 
+  scale_colour_manual(values = colors) +
+  labs(y = "Number of cases", title = paste("COVID-19 SIR model Malaysia (Log Scale)", name),
+       subtitle = paste("Projection from data:", start_date, "to", fitted_projected$Date[max(Day)]," projected up to: ",last_date),
+      color = paste0("MAPE (I) = ", round(MAPE_A,3), " (",round(ACC_A*100,2),"%) \n",
+                      "MAPE (R) = ", round(MAPE_R,3), " (",round(ACC_R*100,2),"%) \n\n",
+                      "R square 1 (I) = ", round(R2_1,3), "\n",
+                      "R square 2 (R) = ", round(R2_2,3), "\n",
+                      "R0 = ", round(R0, 3), "\n",
+                      "beta = ", round(Opt_par[1], 3), "\n",
+                      "gamma = ", round(Opt_par[2], 3), "\n",
+                      "Susceptible = ", round(n), "\n",
+                      "Peak Active = ", round(max(fitted_projected$I)), "\n",
+                      "Maximum Total Infected = ", round(max(fitted_projected$total_infected)))) +
+  geom_vline(xintercept = as.numeric(as.Date(max_date)), linetype = "dashed", size=0.5, color="red") +
+  annotate(geom = "text", x = as.Date(max_date)+1.5, y = log10(n)*50, 
+           label = paste0("Projected Peak\n", format(max_date, "%d/%m/%y"), "\n(",round(max_I_val,0)," cases)"), angle = 0) +
+  geom_vline(xintercept = as.numeric(as.Date(today())), linetype = "dashed", color = "blue", size=0.5) +
+  annotate(geom = "text", x = as.Date(today())+1.5, y = log10(n)*30, 
+           label = paste0("Today's Prediction \n(", format(today(), "%d/%m/%y"), ")\n",
+                          "Total Cases  = ", round(fitted_projected[fitted_projected$Date == today(), "total_infected"]),
+                          "\nActive Cases = ",round(fitted_projected[fitted_projected$Date == today(), "I"]),
+                          "\nNew Cases = ", round(new_today)), angle = 0) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  sirplot1_log
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
