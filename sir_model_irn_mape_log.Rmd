@@ -111,7 +111,7 @@ RSS = function(parameters) {
 name = "MCO week 2 -> Today"
 start_date  = "2020-03-25"
 end_date    = today()
-# So far, this provides good balance between MCOs
+# So far, this provides good balance between MCOs.
 
 # MCO 1 #
 # name = "MCO 1"

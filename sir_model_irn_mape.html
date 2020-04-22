@@ -365,7 +365,7 @@ summary {
 
 <h1 class="title toc-ignore">Covid-19 SIR Modeling Malaysia</h1>
 <h4 class="author">Chan Weng Howe (UTM), Wan Nor Arifin (USM)</h4>
-<h4 class="date">Wed, 22 Apr 2020 8:23:33 PM</h4>
+<h4 class="date">Wed, 22 Apr 2020 8:35:25 PM</h4>
 
 </div>
 
@@ -446,8 +446,8 @@ RSS = function(parameters) {
   # Give balance to prediction of small values and large values.
   # ---
   # MAPE
-  # w1*(sum(abs(log(Active) - log(fit1))/log(Active)) / length(fit1))  + w2*(sum(abs(log(Removed) - log(fit2))/log(Removed)) / length(fit2))  # MAPE
-  # w1*(sum(abs(Active - fit1)/Active) / length(fit1)) + w2*(sum(abs(Removed - fit2)/Removed) / length(fit2)) + w3*(sum(abs((Active+Removed) - (fit1+fit2))/(Active+Removed)) / length(fit1))
+  # w1*(mean(abs(log(Active) - log(fit1))/log(Active)))  + w2*(mean(abs(log(Removed) - log(fit2))/log(Removed)))  # MAPE
+  # w1*(mean(abs(Active - fit1)/Active) / length(fit1)) + w2*(sum(abs(Removed - fit2)/Removed)) + w3*(mean(abs((Active+Removed) - (fit1+fit2))/(Active+Removed)))
   # Intuitive, but may be problematic when denominator = 0, or error &gt; 1 for large prediction.
 }</code></pre>
 </div>
@@ -680,9 +680,9 @@ tss1 = sum((fitted_projected$A - mean(fitted_projected$A))^2); tss1</code></pre>
 <pre><code>## [1] 122.9247</code></pre>
 <pre class="r"><code>rmse2 = sqrt(mean((fitted_projected$Rm - fitted_projected$R)^2)); rmse2</code></pre>
 <pre><code>## [1] 165.6308</code></pre>
-<pre class="r"><code>mape1 = sum(abs(fitted_projected$A - fitted_projected$I)/fitted_projected$A) / length(fitted_projected$A); mape1</code></pre>
+<pre class="r"><code>mape1 = mean(abs(fitted_projected$A - fitted_projected$I)/fitted_projected$A); mape1</code></pre>
 <pre><code>## [1] 0.04770647</code></pre>
-<pre class="r"><code>mape2 = sum(abs(fitted_projected$Rm - fitted_projected$R)/fitted_projected$Rm) / length(fitted_projected$Rm); mape2</code></pre>
+<pre class="r"><code>mape2 = mean(abs(fitted_projected$Rm - fitted_projected$R)/fitted_projected$Rm); mape2</code></pre>
 <pre><code>## [1] 0.1577167</code></pre>
 </div>
 <div id="plots" class="section level1">
