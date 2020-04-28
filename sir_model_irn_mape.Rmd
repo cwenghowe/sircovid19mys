@@ -2,7 +2,9 @@
 title: "Covid-19 SIR Modeling Malaysia"
 author: "Chan Weng Howe (UTM), Wan Nor Arifin (USM)"
 date: "`r format(Sys.time(), '%a, %e %b %Y %l:%M:%S %p')`"
-output: html_document
+output:
+  html_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -168,16 +170,17 @@ parameters_values_lower = c(1/100, 1/42)  # days recover max 6 weeks
 # parameters_values_lower = c(1/100, 1/18.5)  # setting for log scale, days recover 6 weeks, reduce bound bcs not many severe, observed show quick recovery
 parameters_values_upper = c(1, 1/11)  # updated to min 11 days
 
-# Placeholder to ind optimal susceptible population
-N_in_steps = data.frame(step=1:7, N=rep(NA,7), Loc=rep(NA,7))
+# Placeholder to find optimal susceptible population
+max_step = 7   # 7 seems sufficient
+N_in_steps = data.frame(step=1:max_step, N=rep(NA,max_step), Loc=rep(NA,max_step))
 
 # Initial values
 N           = 32.68E6/2  # 4th quarter, 2019
 Opt_min_loc = 1  # Optimum minimum n location in output vector
 step_i      = 1  # initialize step
 
-# Step 1-7
-for (step_i in 1:7) {
+# Steps
+for (step_i in 1:max_step) {
   cat("=== Step ", step_i, ": Finding optimal values of beta, gamma and n ===\n", sep ="")
   N = N[Opt_min_loc]  # Susceptible population from previous Step
   # initial susceptible population of Malaysia
@@ -200,7 +203,7 @@ for (step_i in 1:7) {
   N_in_steps[step_i, "Loc"] = Opt_min_loc
   cat("=== Found n = ", N[Opt_min_loc], " at location ", Opt_min_loc, " in vector N ===\n\n", sep = "")
   step_i = step_i + 1
-  if (step_i == 8) {
+  if (step_i == max_step + 1) {
     cat("=== Finalizing results =====\n")
     cat("============================\n")
     print(N_in_steps)
@@ -335,6 +338,8 @@ new_today = (fitted_projected[fitted_projected$Date == today(), ] - fitted_proje
 # maximum cumulative cases, date. May add to plot.
 fitted_projected$Date[min(which(round(fitted_projected$total_infected) == max(round(fitted_projected$total_infected))))]
 fitted_projected[min(which(round(fitted_projected$total_infected) == max(round(fitted_projected$total_infected)))),]
+# save for later view
+write.csv(fitted_projected, "fitted_sir.csv")
 ```
 
 ```{r fig.width=12, fig.height=9}
